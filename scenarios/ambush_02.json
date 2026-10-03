@@ -1,0 +1,196 @@
+{
+  "meta": {
+    "id": "ambush_02",
+    "title": "River Crossing: Two Feeds, Failing Net",
+    "description": "A platoon commander covers a river crossing. A recon team (company net) and a UAV feed each report on the enemy. Over three minutes the net is jammed, the two sources start to disagree, and a cyber attack injects a false infantry position just before contact.",
+    "duration": 180,
+    "seed": 7
+  },
+  "units": [
+    {
+      "id": "blue_recon",
+      "side": "blue",
+      "x": 0,
+      "y": 0,
+      "vx": 0,
+      "vy": 0,
+      "strength": 4
+    },
+    {
+      "id": "blue_uav",
+      "side": "blue",
+      "x": 300,
+      "y": 650,
+      "vx": 0,
+      "vy": 0,
+      "strength": 1
+    },
+    {
+      "id": "red_armor",
+      "side": "red",
+      "x": 1000,
+      "y": 500,
+      "vx": -2.5,
+      "vy": -0.5,
+      "strength": 8
+    },
+    {
+      "id": "red_inf",
+      "side": "red",
+      "x": 1250,
+      "y": 250,
+      "vx": -1.5,
+      "vy": 0.8,
+      "strength": 12
+    },
+    {
+      "id": "red_arty",
+      "side": "red",
+      "x": 1350,
+      "y": 600,
+      "vx": -0.3,
+      "vy": 0,
+      "strength": 6
+    }
+  ],
+  "roles": [
+    "plt_cdr"
+  ],
+  "sensors": [
+    {
+      "observer": "blue_recon",
+      "subject": "red_armor",
+      "trainee": "plt_cdr",
+      "channel": "company_net"
+    },
+    {
+      "observer": "blue_recon",
+      "subject": "red_inf",
+      "trainee": "plt_cdr",
+      "channel": "company_net"
+    },
+    {
+      "observer": "blue_uav",
+      "subject": "red_armor",
+      "trainee": "plt_cdr",
+      "channel": "uav_feed"
+    },
+    {
+      "observer": "blue_uav",
+      "subject": "red_arty",
+      "trainee": "plt_cdr",
+      "channel": "uav_feed"
+    }
+  ],
+  "injects": [
+    {
+      "at": 20,
+      "kind": "delay",
+      "channel": "company_net",
+      "duration": 20,
+      "severity": 6,
+      "note": "Light EW interference on the company net"
+    },
+    {
+      "at": 45,
+      "kind": "dropout",
+      "channel": "company_net",
+      "duration": 25,
+      "severity": 0.85,
+      "note": "Jammer intensifies: company net intermittent"
+    },
+    {
+      "at": 60,
+      "kind": "conflict",
+      "channel": "uav_feed",
+      "duration": 25,
+      "severity": 120,
+      "target": "red_armor",
+      "note": "UAV feed and recon begin to disagree about the armor"
+    },
+    {
+      "at": 85,
+      "kind": "corrupt",
+      "channel": "uav_feed",
+      "duration": 30,
+      "severity": 150,
+      "note": "UAV link degraded: position errors"
+    },
+    {
+      "at": 105,
+      "kind": "delay",
+      "channel": "company_net",
+      "duration": 30,
+      "severity": 12,
+      "note": "Heavy jamming: company net reports arrive very late"
+    },
+    {
+      "at": 115,
+      "kind": "dropout",
+      "channel": "uav_feed",
+      "duration": 25,
+      "severity": 0.6,
+      "note": "UAV feed largely lost"
+    },
+    {
+      "at": 130,
+      "kind": "spoof",
+      "channel": "company_net",
+      "duration": 15,
+      "severity": 250,
+      "target": "red_inf",
+      "note": "Cyber attack: false infantry position injected"
+    },
+    {
+      "at": 140,
+      "kind": "corrupt",
+      "channel": "uav_feed",
+      "duration": 40,
+      "severity": 250,
+      "note": "UAV link compromised during the final approach: large position errors"
+    },
+    {
+      "at": 150,
+      "kind": "conflict",
+      "channel": "company_net",
+      "duration": 20,
+      "severity": 180,
+      "target": "red_armor",
+      "note": "Conflicting armor reports at the critical moment"
+    },
+    {
+      "at": 160,
+      "kind": "dropout",
+      "channel": "company_net",
+      "duration": 20,
+      "severity": 0.85,
+      "note": "Net nearly down during the final approach"
+    }
+  ],
+  "decision_points": [
+    {
+      "at": 15,
+      "prompt": "Recon reports an enemy force advancing from the east. Set your initial posture."
+    },
+    {
+      "at": 45,
+      "prompt": "Reports are becoming unreliable. Hold, reposition, or request more recon?"
+    },
+    {
+      "at": 75,
+      "prompt": "Two sources disagree about the armor. What do you believe, and what do you order?"
+    },
+    {
+      "at": 105,
+      "prompt": "Heavy jamming: you may be acting on old information. Commit or wait?"
+    },
+    {
+      "at": 135,
+      "prompt": "The infantry position looks very different from before. Adjust your plan or hold it?"
+    },
+    {
+      "at": 160,
+      "prompt": "Contact is imminent and your net is failing. Give your final order."
+    }
+  ]
+}

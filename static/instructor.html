@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Instructor Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+:root{--bg:#10150f;--panel:#1a2118;--line:#2d3a2a;--fg:#d6e2d0;--dim:#8a9a85;--acc:#9be37a;--warn:#ffb347;--bad:#ff6b5e;--blue:#5aa9ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif}
+input,select,button{font:inherit;color:var(--fg);background:#0c100b;border:1px solid var(--line);border-radius:5px;padding:6px}
+button{background:var(--acc);color:#10150f;font-weight:600;cursor:pointer;border:0;padding:6px 14px}
+a.btn{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:5px 10px;text-decoration:none;cursor:pointer}
+button.alt{background:var(--panel);color:var(--fg);border:1px solid var(--line)} button.danger{background:var(--bad)}
+#connect{max-width:420px;margin:10vh auto;background:var(--panel);border:1px solid var(--line);padding:24px;border-radius:8px}
+#connect input,#connect select{width:100%;margin:4px 0 10px} #err{color:var(--bad);min-height:1.2em}
+#app{display:none;height:100vh;grid-template-columns:1fr 380px;grid-template-rows:auto 1fr}
+#bar{grid-column:1/3;display:flex;gap:16px;align-items:center;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+#bar b{color:var(--acc)} #state{padding:2px 10px;border:1px solid var(--line);border-radius:12px}
+#left{display:grid;grid-template-rows:1fr auto;min-height:0} #map{background:#0b0f0a}
+#legend{padding:6px 12px;color:var(--dim);border-top:1px solid var(--line);font-size:12px}
+#right{border-left:1px solid var(--line);overflow:auto;min-height:0}
+section{padding:10px 12px;border-bottom:1px solid var(--line)}
+h4{margin:0 0 6px;color:var(--dim);font-weight:500;text-transform:uppercase;font-size:11px;letter-spacing:.08em}
+.row{display:flex;gap:6px;margin-bottom:6px;align-items:center} .row>*{flex:1} .row label{flex:0 0 70px;color:var(--dim)}
+#hint{color:var(--dim);font-size:12px;margin-bottom:8px}
+.item{padding:6px 0;border-bottom:1px solid var(--line)} .item small{color:var(--dim)} .tag{color:var(--warn)} .bad{color:var(--bad)}
+.leaflet-tooltip{background:#10150f;color:var(--fg);border:1px solid var(--line)}
+</style></head><body>
+
+<div id="connect">
+  <h3 style="margin-top:0">Instructor Dashboard</h3>
+  <label>Scenario</label><select id="scen"></select>
+  <button id="create" style="width:100%">Create new room</button>
+  <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+  <label>Or join an existing room code</label><input id="room" maxlength="4" style="text-transform:uppercase">
+  <button id="join" class="alt" style="width:100%">Open dashboard</button><div id="err"></div>
+  <button id="logout2" class="alt" style="width:100%;margin-top:12px">Log out</button>
+</div>
+
+<div id="app">
+  <div id="bar">
+    <span id="title" style="font-weight:600"></span><span>Room <b id="b-room"></b></span>
+    <span>T+<b id="b-t">0</b>s / <span id="b-dur"></span>s</span><span id="b-players" style="color:var(--dim)"></span>
+    <span style="margin-left:auto" id="state">lobby</span>
+    <button id="start">Start</button><button id="pause" class="alt">Pause</button><button id="logout" class="alt">Log out</button>
+    <span style="color:var(--dim)">AAR:</span><a id="aar-pdf" class="btn">PDF</a><a id="aar-csv" class="btn">CSV</a><a id="aar-json" class="btn" target="_blank">JSON</a>
+  </div>
+  <div id="left"><div id="map"></div>
+    <div id="legend">Filled blue = friendly (truth) · Filled red = enemy (truth) · Hollow amber = what a trainee believes · Line = error between belief and truth</div></div>
+  <div id="right">
+    <section><h4>Inject degradation (live)</h4>
+      <div class="row"><label>Type</label><select id="kind"><option>delay</option><option>dropout</option><option>corrupt</option><option>conflict</option><option>spoof</option></select></div>
+      <div class="row"><label>Channel</label><select id="chan"></select></div>
+      <div class="row"><label>Target</label><select id="target"></select></div>
+      <div class="row"><label>Severity</label><input id="sev" type="number" step="any" value="8"></div>
+      <div class="row"><label>Duration</label><input id="dur" type="number" value="20"></div>
+      <div id="hint"></div><button id="fire" class="danger" style="width:100%">Fire inject now</button><div id="ok" style="color:var(--acc);margin-top:6px"></div></section>
+    <section><h4>Active degradation</h4><div id="rules"></div></section>
+    <section><h4>Scheduled injects</h4><div id="pending"></div></section>
+    <section><h4>Trainee decisions (newest first)</h4><div id="decisions"></div></section>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const HINTS = {delay: ["seconds added to delivery", 8], dropout: ["probability a report is lost (0 to 1)", 0.5],
+  corrupt: ["metres of random position error", 100], conflict: ["metres offset of a contradicting second report", 150],
+  spoof: ["metres offset of a false injected report", 200]};
+let ws, map, marks = {}, code = "", built = false;
+
+const loggedOut = () => { location = "/"; };
+fetch("/scenarios").then(r => { if (r.status === 401) { loggedOut(); throw 0; } return r.json(); })
+  .then(list => list.forEach(s => $("scen").add(new Option(s, s)))).catch(() => {});
+$("create").onclick = async () => {
+  try {
+    const r = await fetch(`/rooms?scenario=${encodeURIComponent($("scen").value)}`, {method: "POST"});
+    if (r.status === 401) return loggedOut();
+    if (!r.ok) { $("err").textContent = "Could not create the room."; return; }
+    open_((await r.json()).room);
+  } catch (e) { $("err").textContent = "Could not create room. Is the server running?"; }
+};
+const logout = () => fetch("/api/logout", {method: "POST"}).then(loggedOut);
+$("logout").onclick = logout; $("logout2").onclick = logout;
+$("join").onclick = () => { const c = $("room").value.trim().toUpperCase(); c ? open_(c) : $("err").textContent = "Enter a room code."; };
+$("start").onclick = () => send({type: "start"}); $("pause").onclick = () => send({type: "pause"});
+$("kind").onchange = hint; hint();
+function hint() { const [t, d] = HINTS[$("kind").value]; $("hint").textContent = "Severity = " + t; $("sev").value = d; }
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+
+$("fire").onclick = () => {
+  const inj = {kind: $("kind").value, channel: $("chan").value, severity: +$("sev").value, duration: +$("dur").value};
+  if ($("target").value) inj.target = $("target").value;
+  send({type: "inject", inject: inj});
+  $("ok").textContent = `Sent: ${inj.kind} on ${inj.channel}`;
+};
+
+function open_(c) {
+  code = c;
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/${c}/instructor`);
+  ws.onclose = () => { if (!built) $("err").textContent = "Could not open that room. Check the code, or log in again."; };
+  ws.onmessage = e => { const m = JSON.parse(e.data);
+    if (m.type === "error") { ($("err").textContent = m.msg); $("ok").textContent = m.msg; }
+    else if (m.type === "instructor_state") render(m); };
+}
+
+function initMap() {
+  map = L.map("map", {crs: L.CRS.Simple, minZoom: -2, zoomSnap: 0.25, attributionControl: false});
+  const b = [[0, 0], [700, 1400]];
+  L.rectangle(b, {color: "#2d3a2a", weight: 1, fill: false}).addTo(map);
+  for (let v = 100; v < 1400; v += 100) L.polyline([[0, v], [700, v]], {color: "#1c261a", weight: 1}).addTo(map);
+  for (let v = 100; v < 700; v += 100) L.polyline([[v, 0], [v, 1400]], {color: "#1c261a", weight: 1}).addTo(map);
+  map.fitBounds(b);
+}
+
+function clear(el) { el.replaceChildren(); return el; }
+function item(parent, text, small, cls) {
+  const d = document.createElement("div"); d.className = "item";
+  const s = document.createElement("span"); s.textContent = text; if (cls) s.className = cls; d.append(s);
+  if (small) { const q = document.createElement("small"); q.textContent = " " + small; d.append(document.createElement("br"), q); }
+  parent.append(d);
+}
+function mark(key, make) { if (!marks[key]) marks[key] = make().addTo(map); return marks[key]; }
+
+function render(m) {
+  if (!built) {
+    built = true; $("connect").style.display = "none"; $("app").style.display = "grid"; initMap();
+    $("aar-pdf").href = `/rooms/${m.room}/aar.pdf`; $("aar-csv").href = `/rooms/${m.room}/aar.csv`; $("aar-json").href = `/rooms/${m.room}/aar`;
+    $("title").textContent = m.title; $("b-room").textContent = m.room; $("b-dur").textContent = m.duration;
+    m.channels.forEach(c => $("chan").add(new Option(c, c)));
+    $("target").add(new Option("(all units)", "")); Object.keys(m.truth).forEach(u => $("target").add(new Option(u, u)));
+  }
+  $("b-t").textContent = m.t; $("state").textContent = m.state;
+  $("b-players").textContent = m.roles.map(r => `${r}: ${m.players[r] || "(empty)"}`).join("  ·  ");
+
+  // Truth markers
+  for (const [id, u] of Object.entries(m.truth)) {
+    const col = u.side === "blue" ? "#5aa9ff" : "#ff6b5e";
+    mark("t:" + id, () => L.circleMarker([u.y, u.x], {color: col, fillColor: col, fillOpacity: .8}).bindTooltip(id, {permanent: true, direction: "right", offset: [8, 0]}))
+      .setLatLng([u.y, u.x]).setRadius(5 + u.strength / 2);
+  }
+  // Believed markers per trainee + error line to the truth
+  for (const [role, subs] of Object.entries(m.beliefs)) for (const [id, b] of Object.entries(subs)) {
+    const k = role + ":" + id, u = m.truth[id]; if (!u) continue;
+    mark("b:" + k, () => L.circleMarker([b.y, b.x], {color: "#ffb347", weight: 2, fill: false, dashArray: "3 3"}).bindTooltip("", {direction: "top"}))
+      .setLatLng([b.y, b.x]).setRadius(8).setTooltipContent(`${role} believes ${id} here (${b.stale}s old)`);
+    mark("l:" + k, () => L.polyline([[b.y, b.x], [u.y, u.x]], {color: "#ffb347", weight: 1, dashArray: "2 6"}))
+      .setLatLngs([[b.y, b.x], [u.y, u.x]]);
+  }
+
+  const rules = clear($("rules")); if (!m.active_rules.length) item(rules, "None", "", "tag");
+  m.active_rules.forEach(r => item(rules, `${r.kind} on ${r.channel}${r.target ? " → " + r.target : ""}`, `severity ${r.severity}, ${r.end - m.t}s left`, "tag"));
+  const pend = clear($("pending")); if (!m.pending_injects.length) item(pend, "None left");
+  m.pending_injects.forEach(i => item(pend, `T+${i.at}s ${i.kind} (${i.duration ?? "-"}s)`, i.note || ""));
+
+  const dec = clear($("decisions")); if (!m.decisions.length) item(dec, "No decisions yet");
+  m.decisions.slice().reverse().forEach(d => {
+    const errs = Object.entries(d.believed).filter(([k]) => d.truth[k]).map(([k, b]) => {
+      const e = Math.round(Math.hypot(b.x - d.truth[k].x, b.y - d.truth[k].y));
+      return `${k}: believed ${e}m off, info ${b.age}s old${b.flags.length ? " [" + b.flags.join(",") + "]" : ""}`; });
+    item(dec, `T+${d.t}s ${d.trainee}: "${d.order}" (confidence ${d.confidence}/5)`,
+      (d.rationale ? "Why: " + d.rationale + " | " : "") + (errs.join(" | ") || "no information at that time"));
+  });
+}
+</script></body></html>

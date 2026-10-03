@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trainee Console</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+:root{--bg:#10150f;--panel:#1a2118;--line:#2d3a2a;--fg:#d6e2d0;--dim:#8a9a85;--acc:#9be37a;--warn:#ffb347;--bad:#ff6b5e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif}
+#join{max-width:360px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);padding:24px;border-radius:8px}
+#join label{display:block;margin:10px 0 2px;color:var(--dim)}
+input,textarea,button{font:inherit;color:var(--fg);background:#0c100b;border:1px solid var(--line);border-radius:5px;padding:7px;width:100%}
+button{background:var(--acc);color:#10150f;font-weight:600;cursor:pointer;border:0;margin-top:14px}
+#err{color:var(--bad);min-height:1.2em;margin-top:8px}
+#app{display:none;height:100vh;grid-template-columns:1fr 340px;grid-template-rows:auto 1fr}
+#bar{grid-column:1/3;display:flex;gap:18px;align-items:center;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+#bar b{color:var(--acc)} #state{margin-left:auto;padding:2px 10px;border:1px solid var(--line);border-radius:12px}
+#map{background:#0b0f0a}
+#side{display:flex;flex-direction:column;border-left:1px solid var(--line);min-height:0}
+#side h4{margin:0;padding:8px 12px;color:var(--dim);font-weight:500;text-transform:uppercase;font-size:11px;letter-spacing:.08em}
+#feed{flex:1;overflow:auto;padding:0 12px;min-height:80px}
+.msg{padding:6px 0;border-bottom:1px solid var(--line)} .msg small{color:var(--dim)}
+#dec{padding:12px;border-top:1px solid var(--line);background:var(--panel)}
+#prompt{display:none;background:#3a2a10;border:1px solid var(--warn);color:var(--warn);padding:8px;border-radius:5px;margin-bottom:8px}
+textarea{resize:vertical;height:58px;margin-top:6px}
+#conf{display:flex;gap:4px;margin-top:6px;align-items:center} #conf label{flex:1;text-align:center;border:1px solid var(--line);border-radius:5px;padding:4px;cursor:pointer}
+#conf input{display:none} #conf label:has(input:checked){background:var(--acc);color:#10150f}
+#ok{color:var(--acc);min-height:1.2em;margin-top:6px}
+.leaflet-tooltip{background:#10150f;color:var(--fg);border:1px solid var(--line)}
+</style></head><body>
+
+<div id="join">
+  <h3 style="margin-top:0">Trainee Console</h3>
+  <label>Room code</label><input id="room" maxlength="4" style="text-transform:uppercase">
+  <label>Role</label><input id="role" value="plt_cdr">
+  <label>Your name</label><input id="pname" value="Trainee">
+  <button id="go">Join exercise</button><div id="err"></div>
+</div>
+
+<div id="app">
+  <div id="bar"><span>Room <b id="b-room"></b></span><span>Role <b id="b-role"></b></span>
+    <span>T+<b id="b-t">0</b>s / <span id="b-dur"></span>s</span><span id="b-team" style="color:var(--dim)"></span><span id="state">lobby</span></div>
+  <div id="map"></div>
+  <div id="side">
+    <h4>Message feed</h4><div id="feed"></div>
+    <div id="dec">
+      <div id="prompt"></div>
+      <input id="order" placeholder="Your order (e.g. hold, fire mission, withdraw)">
+      <textarea id="why" placeholder="Why? (optional, add it if you have time)"></textarea>
+      <div id="conf"><span style="color:var(--dim)">Confidence</span>
+        <label><input type="radio" name="c" value="1">1</label><label><input type="radio" name="c" value="2">2</label>
+        <label><input type="radio" name="c" value="3" checked>3</label><label><input type="radio" name="c" value="4">4</label>
+        <label><input type="radio" name="c" value="5">5</label></div>
+      <button id="send">Issue order</button><div id="ok"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+["room","role","pname"].forEach(k => { const v = qs.get(k === "pname" ? "name" : k); if (v) $(k).value = v; });
+
+let ws, map, layers = {};
+const GRID = [700, 1400];                       // map extent in scenario metres (y, x)
+
+function initMap() {
+  map = L.map("map", {crs: L.CRS.Simple, minZoom: -2, zoomSnap: 0.25, attributionControl: false});
+  const b = [[0, 0], GRID];
+  L.rectangle(b, {color: "#2d3a2a", weight: 1, fill: false}).addTo(map);
+  for (let v = 100; v < GRID[1]; v += 100) L.polyline([[0, v], [GRID[0], v]], {color: "#1c261a", weight: 1}).addTo(map);
+  for (let v = 100; v < GRID[0]; v += 100) L.polyline([[v, 0], [v, GRID[1]]], {color: "#1c261a", weight: 1}).addTo(map);
+  map.fitBounds(b);
+}
+
+function connect() {
+  const room = $("room").value.trim().toUpperCase(), role = $("role").value.trim(), name = $("pname").value.trim() || "Trainee";
+  if (!room) { $("err").textContent = "Enter the room code."; return; }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws/${room}/trainee/${encodeURIComponent(role)}?name=${encodeURIComponent(name)}`);
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === "error") { handleError(m.msg); return; }
+    if (m.type === "state") render(m);
+  };
+  ws.onclose = () => { if ($("app").style.display === "grid") $("state").textContent = "disconnected"; };
+}
+
+function handleError(msg) {
+  if ($("app").style.display === "grid") { $("ok").style.color = "var(--bad)"; $("ok").textContent = msg; }
+  else $("err").textContent = msg;
+}
+
+let first = true;
+function render(m) {
+  if (first) {
+    first = false;
+    $("join").style.display = "none"; $("app").style.display = "grid";
+    initMap();
+    $("b-room").textContent = m.room; $("b-role").textContent = m.role; $("b-dur").textContent = m.duration;
+  }
+  $("b-t").textContent = m.t;
+  $("state").textContent = m.state === "finished" ? "exercise complete" : m.state;
+  $("b-team").textContent = Object.entries(m.teammates).map(([r, n]) => `${r}: ${n}`).join("  ·  ");
+
+  // Map: one marker per reported unit; fades with the age of the information
+  const seen = new Set();
+  m.picture.forEach(p => {
+    seen.add(p.subject);
+    const stale = m.t - p.observed_at;                       // how old this info really is
+    const op = Math.max(0.15, 1 - stale / 40);
+    let L_ = layers[p.subject];
+    if (!L_) {
+      L_ = layers[p.subject] = {
+        dot: L.circleMarker([p.y, p.x], {color: "#ff6b5e", fillColor: "#ff6b5e"}).addTo(map).bindTooltip("", {permanent: true, direction: "right", offset: [10, 0]}),
+        ring: L.circleMarker([p.y, p.x], {color: "#ffb347", weight: 1, dashArray: "4 4", fill: false}).addTo(map)};
+    }
+    L_.dot.setLatLng([p.y, p.x]).setRadius(6 + p.strength / 2).setStyle({opacity: op, fillOpacity: op * 0.7});
+    L_.ring.setLatLng([p.y, p.x]).setRadius(10 + Math.min(stale, 40)).setStyle({opacity: Math.min(0.9, stale / 15)});
+    L_.dot.setTooltipContent(`${p.subject} · strength ${p.strength}<br>info is ${stale}s old`);
+  });
+  Object.keys(layers).forEach(k => { if (!seen.has(k)) { layers[k].dot.remove(); layers[k].ring.remove(); delete layers[k]; } });
+
+  // Feed (newest first). Built with textContent: never inject raw strings as HTML.
+  const feed = $("feed"); feed.replaceChildren();
+  m.feed.slice().reverse().forEach(f => {
+    const d = document.createElement("div"); d.className = "msg";
+    d.textContent = `${f.src} reports ${f.subject} at (${f.x}, ${f.y}), strength ${f.strength}`;
+    const s = document.createElement("small");
+    s.textContent = ` — received T+${f.t}s, observed T+${f.observed_at}s`;
+    d.append(s); feed.append(d);
+  });
+
+  // Decision prompt banner (do not touch the form fields: user may be typing)
+  const pr = $("prompt");
+  if (m.prompt) { pr.style.display = "block"; pr.textContent = `DECISION POINT: ${m.prompt.prompt}`; }
+  else pr.style.display = "none";
+  $("send").disabled = m.state === "finished";
+}
+
+$("go").onclick = connect;
+if (qs.get("room")) connect();          // arriving from the landing page: join straight away
+$("send").onclick = () => {
+  const order = $("order").value.trim();
+  if (!order) { handleError("Write an order first."); return; }
+  const conf = +document.querySelector("input[name=c]:checked").value;
+  ws.send(JSON.stringify({type: "decision", order, rationale: $("why").value, confidence: conf}));
+  $("order").value = ""; $("why").value = "";
+  $("ok").style.color = "var(--acc)"; $("ok").textContent = `Order issued at T+${$("b-t").textContent}s`;
+};
+</script></body></html>

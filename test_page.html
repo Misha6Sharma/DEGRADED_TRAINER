@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>Trainer debug console</title>
+<style>body{font:14px monospace;margin:16px}pre{background:#111;color:#8f8;padding:10px;height:320px;overflow:auto}
+button,input{font:inherit;margin:2px}</style>
+<h3>Debug console (Step 3)</h3>
+<div>Room: <input id=room size=5> Role: <input id=role value=plt_cdr size=8> Name: <input id=pname value=you size=8>
+<button onclick="join()">Join as trainee</button> <button onclick="instr()">Join as instructor</button></div>
+<div id=ctl style="display:none">Instructor:
+<button onclick="send({type:'start'})">Start</button><button onclick="send({type:'pause'})">Pause</button>
+<button onclick="inj('delay',10)">Inject delay</button><button onclick="inj('dropout',0.7)">Inject dropout</button>
+<button onclick="inj('conflict',150)">Inject conflict</button></div>
+<div id=dec style="display:none">Order: <input id=order size=24> Why: <input id=why size=24> Conf(1-5): <input id=conf value=3 size=2>
+<button onclick="send({type:'decision',order:order.value,rationale:why.value,confidence:+conf.value})">Send decision</button></div>
+<pre id=out></pre>
+<script>
+let ws;const out=document.getElementById('out');
+function open_(url){ws=new WebSocket(url);ws.onmessage=e=>{out.textContent=JSON.stringify(JSON.parse(e.data),null,1);};}
+function join(){open_(`ws://${location.host}/ws/${room.value}/trainee/${role.value}?name=${pname.value}`);dec.style.display='block'}
+function instr(){open_(`ws://${location.host}/ws/${room.value}/instructor`);ctl.style.display='block'}
+function send(o){ws.send(JSON.stringify(o))}
+function inj(kind,sev){send({type:'inject',inject:{kind,channel:'company_net',severity:sev,duration:20}})}
+</script>

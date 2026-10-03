@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets and local settings: never commit these
+.env
+*.env
+
+# Generated files
+sample_AAR.pdf
+AAR_*.pdf
+AAR_*.csv
+
+# Editor
+.vscode/
+.idea/

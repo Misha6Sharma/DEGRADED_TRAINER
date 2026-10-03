@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "id": "ambush_01",
+    "title": "Bridge Approach: Jammed Net",
+    "description": "Platoon commander holds a bridge while recon reports an armor advance. The company net degrades mid-exercise.",
+    "duration": 60,
+    "seed": 42
+  },
+  "units": [
+    {"id": "blue_recon", "side": "blue", "x": 0,    "y": 0,   "vx": 0,  "vy": 0, "strength": 4},
+    {"id": "red_armor",  "side": "red",  "x": 1000, "y": 500, "vx": -5, "vy": 0, "strength": 8},
+    {"id": "red_inf",    "side": "red",  "x": 1200, "y": 300, "vx": -3, "vy": 1, "strength": 12}
+  ],
+  "roles": ["plt_cdr"],
+  "sensors": [
+    {"observer": "blue_recon", "subject": "red_armor", "trainee": "plt_cdr", "channel": "company_net"},
+    {"observer": "blue_recon", "subject": "red_inf",   "trainee": "plt_cdr", "channel": "company_net"}
+  ],
+  "injects": [
+    {"at": 10, "kind": "delay",    "channel": "company_net", "duration": 30, "severity": 8,   "note": "EW jamming begins: reports arrive late"},
+    {"at": 10, "kind": "dropout",  "channel": "company_net", "duration": 30, "severity": 0.4, "note": "Intermittent link loss"},
+    {"at": 25, "kind": "conflict", "channel": "company_net", "duration": 20, "severity": 150, "target": "red_armor", "note": "Second source contradicts recon on armor"},
+    {"at": 40, "kind": "spoof",    "channel": "company_net", "duration": 10, "severity": 200, "target": "red_inf", "note": "Cyber: false infantry position injected"}
+  ],
+  "decision_points": [
+    {"at": 10, "prompt": "Armor is approaching. Hold, reposition, or call fire support?"},
+    {"at": 30, "prompt": "Picture is unclear. What is your order?"},
+    {"at": 50, "prompt": "Contact imminent. Final order?"}
+  ]
+}
