@@ -1,4 +1,4 @@
-# Dhundh: Degraded-Comms Decision Trainer
+# Dhurandhar: Degraded-Comms Decision Trainer
 
 A web-based trainer for small-team commanders. The simulation holds the ground truth and sends each
 trainee only a degraded copy (delayed, missing, corrupted, conflicting or spoofed reports). Every
